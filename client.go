@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"net/url"
 
 	"golang.org/x/net/websocket"
 )
@@ -333,11 +334,42 @@ func (c *Client) send() {
 // Connect will connect to server with an optional origin.
 // More details here: http://godoc.org/code.google.com/p/go.net/websocket#Dial
 func (c *Client) Connect(server, origin string) error {
+	server_url, err := url.Parse(server)
+	if err != nil {
+		log.Fatalln("Error parsing server URL:", err)
+	}
+	origin_url, err := url.Parse(origin)
+	if err != nil {
+		log.Fatalln("Error parsing origin URL:", err)
+	}
+	config := &websocket.Config{
+		Location: server_url,
+		Origin:   origin_url,
+		Protocol: []string{},
+		Version:  websocket.ProtocolVersionHybi13,
+	}
+
+	return c.ConnectConfig(config)
+}
+
+// ConnectConfig will connect to server with a websocket.Config.
+// More details here: http://godoc.org/code.google.com/p/go.net/websocket#DialConfig
+func (c *Client) ConnectConfig(config *websocket.Config) error {
 	if debug {
 		log.Print("turnpike: connect")
 	}
 	var err error
-	if c.ws, err = websocket.Dial(server, wampProtocolId, origin); err != nil {
+	if config.Protocol == nil {
+		config.Protocol = []string{wampProtocolId}
+	} else {
+		protos := []string{wampProtocolId}
+		for _, pr := range config.Protocol {
+			protos = append(protos, pr)
+		}
+		config.Protocol = protos
+	}
+
+	if c.ws, err = websocket.DialConfig(config); err != nil {
 		return fmt.Errorf("Error connecting to websocket server: %s", err)
 	}
 
@@ -346,7 +378,8 @@ func (c *Client) Connect(server, origin string) error {
 		return err
 	}
 	if debug {
-		log.Printf("turnpike: connected to server: %s", server)
+		log.Printf("turnpike: connected to server: %s",
+			config.Location)
 	}
 
 	go c.receive()
@@ -369,4 +402,9 @@ func newId(size int) string {
 		buf[i] = alpha[rand.Intn(len(alpha))]
 	}
 	return string(buf)
+}
+
+// This isn't really what we want
+func (c *Client) Close() {
+	c.ws.Close()
 }
